@@ -1,0 +1,33 @@
+from app.models.models import (
+    Provincia,
+    Municipio,
+    Autoridade,
+    UsuarioAutoridade,
+    Cidadao,
+    ContatoEmergencia,
+    Alerta,
+    AlertaFamiliar,
+    MidiaOcorrencia,
+    ChatConversa,
+    ChatMensagem,
+    Acompanhamento,
+    Noticia,
+    NotificacaoAcompanhamento,
+)
+
+__all__ = [
+    "Provincia",
+    "Municipio",
+    "Autoridade",
+    "UsuarioAutoridade",
+    "Cidadao",
+    "ContatoEmergencia",
+    "Alerta",
+    "AlertaFamiliar",
+    "MidiaOcorrencia",
+    "ChatConversa",
+    "ChatMensagem",
+    "Acompanhamento",
+    "Noticia",
+    "NotificacaoAcompanhamento",
+]

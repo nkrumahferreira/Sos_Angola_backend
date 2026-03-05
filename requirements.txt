@@ -1,0 +1,14 @@
+# SOS Angola Backend
+# Versões compatíveis com Python 3.13 (wheels pré-compilados, sem necessidade de Rust)
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+python-multipart>=0.0.6
+sqlalchemy>=2.0.25
+psycopg2-binary>=2.9.9
+python-dotenv>=1.0.0
+pydantic-settings>=2.6.0
+pydantic[email]>=2.10.0
+bcrypt>=4.1.2
+PyJWT>=2.8.0
+python-jose[cryptography]>=3.3.0
+httpx>=0.26.0
