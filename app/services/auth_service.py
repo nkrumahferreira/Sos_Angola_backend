@@ -1,8 +1,9 @@
 from sqlalchemy.orm import Session
-from app.models.models import UsuarioAutoridade, Cidadao
+from app.models.models import UsuarioAutoridade, Cidadao, ContatoEmergencia
 from app.utils.password_utils import verify_password, hash_password
 from app.utils.jwt_utils import create_access_token
 from app.config import settings
+from datetime import date
 
 
 def authenticate_autoridade(db: Session, email: str, password: str) -> UsuarioAutoridade | None:
@@ -29,17 +30,16 @@ def create_token_autoridade(user: UsuarioAutoridade) -> dict:
     }
 
 
-def authenticate_cidadao(db: Session, telefone: str | None, email: str | None, password: str) -> Cidadao | None:
-    if not telefone and not email:
+def obter_cidadao_para_login(db: Session, telefone: str | None, bi: str | None) -> Cidadao | None:
+    """Obtém cidadão por telefone ou BI (login sem palavra-passe, para reentrada no app)."""
+    if not telefone and not bi:
         return None
     q = db.query(Cidadao).filter(Cidadao.ativo == True)
     if telefone:
-        cidadao = q.filter(Cidadao.telefone == telefone).first()
-    else:
-        cidadao = q.filter(Cidadao.email == email).first()
-    if not cidadao or not cidadao.password_hash or not verify_password(password, cidadao.password_hash):
-        return None
-    return cidadao
+        return q.filter(Cidadao.telefone == telefone).first()
+    if bi:
+        return q.filter(Cidadao.bi == (bi.strip().upper() if bi else None)).first()
+    return None
 
 
 def create_token_cidadao(cidadao: Cidadao) -> dict:
@@ -58,20 +58,39 @@ def create_token_cidadao(cidadao: Cidadao) -> dict:
 
 def register_cidadao(
     db: Session,
-    nome: str | None,
-    idade: int | None,
-    telefone: str | None,
-    email: str | None,
+    nome: str,
+    data_nascimento: date,
+    telefone: str,
+    bi: str,
     password: str,
+    contatos_emergencia: list[dict],  # [{"nome": str, "telefone": str, "email": str|None, "tipo": str|None}, ...]
+    email: str | None = None,
+    fotografia_url: str | None = None,
+    fotografia_base64: str | None = None,
+    genero: str | None = None,
 ) -> Cidadao:
     cidadao = Cidadao(
         nome=nome,
-        idade=idade,
+        data_nascimento=data_nascimento,
         telefone=telefone,
-        email=email,
+        bi=bi,
         password_hash=hash_password(password),
+        email=email,
+        fotografia_url=fotografia_url,
+        fotografia_base64=fotografia_base64,
+        genero=genero,
     )
     db.add(cidadao)
+    db.flush()  # para obter cidadao.id antes de inserir contatos
+    for c in contatos_emergencia:
+        contato = ContatoEmergencia(
+            id_cidadao=cidadao.id,
+            nome=c["nome"],
+            telefone=c["telefone"],
+            email=c.get("email"),
+            tipo=c.get("tipo"),
+        )
+        db.add(contato)
     db.commit()
     db.refresh(cidadao)
     return cidadao

@@ -6,6 +6,7 @@ from app.controllers.noticias_controller import router as noticias_router
 from app.controllers.localizacao_controller import router as localizacao_router
 from app.controllers.chat_controller import router as chat_router
 from app.controllers.ws_controller import ws_router
+from app.controllers.internal_controller import router as internal_router
 
 __all__ = [
     "auth_router",
@@ -16,4 +17,5 @@ __all__ = [
     "localizacao_router",
     "chat_router",
     "ws_router",
+    "internal_router",
 ]

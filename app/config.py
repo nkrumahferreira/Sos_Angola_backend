@@ -30,6 +30,13 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
 
+    # Chave para o endpoint interno de verificação de medicação ignorada (cron/job)
+    CRON_SECRET: str = ""
+
+    # QuePasa (WhatsApp): base URL do serviço e token do bot. Se vazios, notificações WhatsApp não são enviadas.
+    QUEPASA_BASE_URL: str = ""
+    QUEPASA_TOKEN: str = ""
+
     UPLOAD_DIR: str = "uploads"
     MAX_UPLOAD_SIZE_MB: int = 50
     ALLOWED_EXTENSIONS: Union[str, List[str]] = "jpg,jpeg,png,gif,mp4,webm"

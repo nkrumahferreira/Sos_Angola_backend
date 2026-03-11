@@ -2,9 +2,13 @@
 SOS Angola Backend - FastAPI
 API para app mobile (cidadãos) e dashboard (autoridades).
 """
+import threading
+import time
+import urllib.request
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
+from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
 from app.database import init_db
@@ -22,6 +26,7 @@ from app.controllers import (
     localizacao_router,
     chat_router,
     ws_router,
+    internal_router,
 )
 
 app = FastAPI(
@@ -29,6 +34,10 @@ app = FastAPI(
     description="API para o sistema SOS Angola: alertas, autoridades, chat e notícias.",
     version=settings.APP_VERSION,
     debug=settings.DEBUG,
+    docs_url="/docs",
+    redoc_url="/redoc",
+    openapi_url="/openapi.json",
+    servers=[{"url": "http://127.0.0.1:8000", "description": "Local (use no browser)"}],
 )
 
 app.add_exception_handler(HTTPException, http_exception_handler)
@@ -51,6 +60,10 @@ app.include_router(noticias_router, prefix="/api/v1")
 app.include_router(localizacao_router, prefix="/api/v1")
 app.include_router(chat_router, prefix="/api/v1")
 app.include_router(ws_router, prefix="/api/v1")
+app.include_router(internal_router, prefix="/api/v1")
+
+# Ficheiros de upload (relatórios vídeo, etc.)
+app.mount("/api/v1/uploads", StaticFiles(directory=settings.UPLOAD_DIR), name="uploads")
 
 
 @app.on_event("startup")
@@ -68,10 +81,33 @@ def startup_event():
     except Exception as e:
         print(f"Aviso: não foi possível conectar ao banco: {e}")
 
+    # Job em background: a cada 15 min verifica medicações com dose em atraso e regista como ignorada
+    def _job_medicacao_ignorada():
+        if not settings.CRON_SECRET:
+            return
+        url = f"http://127.0.0.1:{settings.PORT}/api/v1/internal/verificar-medicacao-ignorada"
+        req = urllib.request.Request(url, headers={"X-Cron-Secret": settings.CRON_SECRET})
+        time.sleep(60)  # primeira execução 1 min após o arranque
+        while True:
+            try:
+                urllib.request.urlopen(req, timeout=30)
+            except Exception:
+                pass
+            time.sleep(900)  # 15 minutos
+
+    if settings.CRON_SECRET:
+        t = threading.Thread(target=_job_medicacao_ignorada, daemon=True)
+        t.start()
+        print("Job de medicação ignorada (cada 15 min) iniciado.")
+
 
 @app.get("/")
 def root():
-    return {"message": "SOS Angola API está a funcionar."}
+    return {
+        "message": "SOS Angola API está a funcionar.",
+        "docs": "http://127.0.0.1:8000/docs",
+        "redoc": "http://127.0.0.1:8000/redoc",
+    }
 
 
 @app.get("/health")

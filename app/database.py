@@ -36,6 +36,8 @@ def get_db():
             yield db
         finally:
             db.close()
+    except HTTPException:
+        raise
     except Exception as e:
         raise RuntimeError(f"Erro ao conectar ao banco de dados: {e}") from e
 

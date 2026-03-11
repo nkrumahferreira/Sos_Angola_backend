@@ -89,11 +89,48 @@ Sos_Angola_backend/
 ### WebSocket
 
 - `WS /api/v1/ws/alertas?token=` – Canal de alertas em tempo real (dashboard). Ao criar um SOS (rápido ou formulário), o backend emite `{ "evento": "novo_alerta", "alerta": {...} }`.
+- `WS /api/v1/ws/live/{alerta_id}?role=citizen|autoridade&token=` (ou `&device_id=` para anónimos) – **Signaling WebRTC** para transmissão em direto (câmara+mic do cidadão para as autoridades). Mensagens: `offer`, `answer`, `ice`.
+
+### Gravação e transmissão em direto da ocorrência
+
+- **Relatório vídeo:** Enquanto o cidadão tem uma ocorrência ativa, o app grava vídeo+áudio. Ao cancelar ou concluir, o ficheiro é enviado para o backend.
+- `POST /api/v1/alertas/{id}/relatorio-video` – Upload do vídeo-relatório (multipart: `file`, opcional `device_id` para anónimos). Guardado em `uploads/relatorios/{id}/` e registado em `midia_ocorrencia`.
+- **Ver em direto (autoridade):** Abrir no browser `GET /api/v1/live-viewer?alerta_id=1&token=JWT` (token de autoridade). A página conecta ao WebSocket de signaling e recebe o stream WebRTC do cidadão (quando o app publicar o stream; no mobile isso requer **development build** e `react-native-webrtc`).
+- Ficheiros de upload servidos em `/api/v1/uploads/` (ex.: `/api/v1/uploads/relatorios/1/xxx.mp4`).
 
 ## Documentação
 
 - Swagger UI: `http://localhost:8000/docs`
 - ReDoc: `http://localhost:8000/redoc`
+
+## Notificações WhatsApp (cuidador) – QuePasa
+
+O backend pode enviar mensagens WhatsApp ao **contacto de emergência tipo cuidador** através do [QuePasa](https://github.com/nocodeleaks/quepasa):
+
+1. **Horários de medicação** – Sempre que o cidadão adiciona um medicamento em Cuidados especiais, o cuidador recebe uma mensagem com a lista de medicamentos e horários.
+2. **Alerta após 3 doses ignoradas** – Quando o cidadão não toma a medicação 3 vezes seguidas, as autoridades são notificadas e o cuidador recebe um WhatsApp a avisar que as autoridades foram notificadas e que deve preocupar-se.
+
+### Configuração
+
+1. **Instalar e correr o QuePasa (Docker)**  
+   No seu computador (com Docker instalado):
+   ```bash
+   git clone https://github.com/nocodeleaks/quepasa.git
+   cd quepasa/docker
+   ```
+   Se não existir ficheiro `.env`, crie um com as variáveis necessárias (ex.: `DOCKER_NETWORK=quepasa_network`, `QUEPASA_EXTERNAL_PORT=31000`, `QUEPASA_INTERNAL_PORT=31000`, `DOMAIN=localhost`, `DBDATABASE=quepasa_whatsmeow`, `DBUSER=quepasa`, `DBPASSWORD=...`, `MASTERKEY=...`, `SIGNING_SECRET=...`, `ACCOUNTSETUP=true`, `DBDRIVER=postgres`, `DBHOST=postgres`, `DBPORT=5432`). Pode usar como referência o `.env.example` em `quepasa/src/` ou a documentação em `quepasa/docker/docker.md`.
+   ```bash
+   docker compose up -d
+   # ou: docker-compose up -d
+   ```
+2. **Ligar uma conta WhatsApp**  
+   Abra no browser `http://localhost:31000` (ou o URL do seu QuePasa), faça login se for pedido, escaneie o QR Code com o WhatsApp e, após ligar, copie o **token** da sessão (na interface do QuePasa).
+3. **Configurar o backend**  
+   No `.env` do **Sos_Angola_backend** defina:
+   - `QUEPASA_BASE_URL=http://localhost:31000` (ou o URL onde o QuePasa está a correr)
+   - `QUEPASA_TOKEN=<token que copiou do QuePasa>`
+
+Se `QUEPASA_BASE_URL` ou `QUEPASA_TOKEN` estiverem vazios, as notificações WhatsApp ao cuidador são ignoradas (o resto da app funciona normalmente).
 
 ## Próximos passos sugeridos
 

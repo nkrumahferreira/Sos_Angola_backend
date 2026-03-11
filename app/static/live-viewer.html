@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Transmissão em direto - SOS Angola</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, sans-serif; margin: 0; padding: 1rem; background: #1a1a2e; color: #eee; }
+    h1 { font-size: 1.25rem; margin-bottom: 0.5rem; }
+    .meta { color: #888; font-size: 0.875rem; margin-bottom: 1rem; }
+    #remoteVideo { width: 100%; max-width: 640px; background: #000; border-radius: 8px; display: block; }
+    .status { margin-top: 0.5rem; padding: 0.5rem; border-radius: 6px; }
+    .status.connecting { background: #333; }
+    .status.live { background: #0a3; color: #000; }
+    .status.error { background: #c00; }
+    .status.waiting { background: #f80; color: #000; }
+    .controls { margin-top: 0.5rem; }
+    .controls button { margin-right: 0.5rem; padding: 0.4rem 0.8rem; border-radius: 6px; cursor: pointer; background: #333; color: #eee; border: 1px solid #555; }
+    .controls button:hover:not(:disabled) { background: #444; }
+    .controls button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .controls button.active { background: #0a3; color: #000; }
+  </style>
+</head>
+<body>
+  <h1>Transmissão em direto – Ocorrência</h1>
+  <p class="meta">Alerta #<span id="alertaId">-</span>. A aguardar ou a receber stream do cidadão.</p>
+  <video id="remoteVideo" autoplay playsinline muted></video>
+  <p class="controls">
+    <button type="button" id="btnBack" disabled>Traseira</button>
+    <button type="button" id="btnFront" disabled>Frontal</button>
+  </p>
+  <p id="status" class="status connecting">A conectar ao servidor de signaling…</p>
+
+  <script>
+    (function () {
+      const params = new URLSearchParams(window.location.search);
+      const alertaId = params.get('alerta_id');
+      const token = params.get('token');
+      const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsHost = window.location.host;
+      const wsUrl = `${wsProtocol}//${wsHost}/api/v1/ws/live/${alertaId}?role=autoridade&token=${encodeURIComponent(token || '')}`;
+
+      const remoteVideo = document.getElementById('remoteVideo');
+      const statusEl = document.getElementById('status');
+      const alertaIdEl = document.getElementById('alertaId');
+
+      if (!alertaId || !token) {
+        statusEl.textContent = 'Parâmetros em falta: alerta_id e token na URL (ex: ?alerta_id=1&token=JWT).';
+        statusEl.className = 'status error';
+        return;
+      }
+      alertaIdEl.textContent = alertaId;
+
+      let pc = null;
+      const ws = new WebSocket(wsUrl);
+      const btnBack = document.getElementById('btnBack');
+      const btnFront = document.getElementById('btnFront');
+
+      function setCameraActive(which) {
+        btnBack.classList.toggle('active', which === 'back');
+        btnFront.classList.toggle('active', which === 'front');
+      }
+
+      ws.onopen = function () {
+        statusEl.textContent = 'Ligado. À espera de oferta do cidadão…';
+        statusEl.className = 'status waiting';
+      };
+
+      ws.onmessage = function (ev) {
+        try {
+          const msg = JSON.parse(ev.data);
+          const type = (msg.type || '').toLowerCase();
+          const payload = msg.payload;
+          const camera = (msg.camera || 'back').toLowerCase();
+
+          if (type === 'offer') {
+            handleOffer(payload);
+            setCameraActive(camera === 'front' ? 'front' : 'back');
+            btnBack.disabled = false;
+            btnFront.disabled = false;
+          } else if (type === 'ice') {
+            if (pc && payload) {
+              pc.addIceCandidate(new RTCIceCandidate(payload)).catch(function (e) {
+                console.warn('addIceCandidate', e);
+              });
+            }
+          }
+        } catch (e) {
+          console.error('Message parse/handle', e);
+          statusEl.textContent = 'Erro ao processar mensagem.';
+          statusEl.className = 'status error';
+        }
+      };
+
+      btnBack.onclick = function () {
+        if (btnBack.disabled) return;
+        ws.send(JSON.stringify({ type: 'switch_camera', payload: 'back' }));
+        setCameraActive('back');
+      };
+      btnFront.onclick = function () {
+        if (btnFront.disabled) return;
+        ws.send(JSON.stringify({ type: 'switch_camera', payload: 'front' }));
+        setCameraActive('front');
+      };
+
+      ws.onerror = function () {
+        statusEl.textContent = 'Erro de ligação WebSocket.';
+        statusEl.className = 'status error';
+      };
+
+      ws.onclose = function () {
+        statusEl.textContent = 'Ligação fechada.';
+        statusEl.className = 'status error';
+        if (pc) {
+          pc.close();
+          pc = null;
+        }
+      };
+
+      async function handleOffer(offerSdp) {
+        if (pc) {
+          pc.close();
+          pc = null;
+        }
+        pc = new RTCPeerConnection({
+          iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+        });
+        pc.ontrack = function (e) {
+          if (e.streams && e.streams[0]) {
+            remoteVideo.srcObject = e.streams[0];
+            statusEl.textContent = 'Em direto';
+            statusEl.className = 'status live';
+          }
+        };
+        pc.onicecandidate = function (e) {
+          if (e.candidate) {
+            ws.send(JSON.stringify({ type: 'ice', payload: e.candidate }));
+          }
+        };
+
+        await pc.setRemoteDescription(new RTCSessionDescription(offerSdp));
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+        ws.send(JSON.stringify({ type: 'answer', payload: answer }));
+      }
+    })();
+  </script>
+</body>
+</html>
