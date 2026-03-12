@@ -256,7 +256,9 @@ class ChatMensagem(Base):
     id_conversa = Column(Integer, ForeignKey("chat_conversa.id"), nullable=False)
     enviado_por = Column(String(20), nullable=False)  # 'cidadao' | 'autoridade'
     id_autor = Column(Integer, nullable=True)  # id_cidadao ou id_usuario_autoridade
-    conteudo = Column(Text, nullable=False)
+    conteudo = Column(Text, nullable=True)  # texto ou legenda; vazio se só mídia
+    tipo_mensagem = Column(String(20), nullable=False, server_default="text")  # text | image | video
+    media_url = Column(String(500), nullable=True)  # path relativo em uploads/chat/...
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     conversa = relationship("ChatConversa", back_populates="mensagens")
 
@@ -295,5 +297,21 @@ class Noticia(Base):
     imagem_url = Column(String(500), nullable=True)
     categoria = Column(String(100), nullable=True)  # primeiros_socorros, dicas, etc.
     publicada = Column(Boolean, default=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+
+# --- Primeiros Socorros (CRUD autoridades; app lista ativos com vídeos/imagens e instruções) ---
+class PrimeiroSocorro(Base):
+    __tablename__ = "primeiro_socorro"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    titulo = Column(String(300), nullable=False)
+    categoria = Column(String(100), nullable=False)  # queimaduras, hemorragia, paragem_cardiaca, engasgamento, etc.
+    descricao = Column(Text, nullable=True)  # resumo curto
+    instrucoes = Column(Text, nullable=True)  # texto completo passo a passo
+    imagem_url = Column(String(500), nullable=True)  # URL ou path relativo (ex.: uploads/ps/xxx.jpg)
+    video_url = Column(String(500), nullable=True)  # URL ou path relativo (ex.: uploads/ps/xxx.mp4)
+    ordem = Column(Integer, default=0)  # ordenação na listagem (menor primeiro)
+    ativo = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())

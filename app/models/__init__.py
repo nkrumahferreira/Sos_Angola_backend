@@ -16,6 +16,7 @@ from app.models.models import (
     ChatMensagem,
     Acompanhamento,
     Noticia,
+    PrimeiroSocorro,
     NotificacaoAcompanhamento,
 )
 
@@ -37,5 +38,6 @@ __all__ = [
     "ChatMensagem",
     "Acompanhamento",
     "Noticia",
+    "PrimeiroSocorro",
     "NotificacaoAcompanhamento",
 ]

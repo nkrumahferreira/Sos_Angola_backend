@@ -4,7 +4,9 @@ from datetime import datetime
 
 
 class ChatMensagemCreate(BaseModel):
-    conteudo: str
+    conteudo: Optional[str] = ""
+    tipo_mensagem: Optional[str] = "text"  # text | image | video
+    media_url: Optional[str] = None  # path devolvido pelo upload de mídia
 
 
 class ChatMensagemResponse(BaseModel):
@@ -12,7 +14,9 @@ class ChatMensagemResponse(BaseModel):
     id_conversa: int
     enviado_por: str
     id_autor: Optional[int] = None
-    conteudo: str
+    conteudo: Optional[str] = None
+    tipo_mensagem: Optional[str] = "text"
+    media_url: Optional[str] = None
     created_at: datetime
 
     class Config:

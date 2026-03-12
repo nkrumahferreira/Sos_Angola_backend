@@ -65,6 +65,8 @@ Sos_Angola_backend/
 - `POST /api/v1/auth/cidadao/login` – Login cidadão
 - `POST /api/v1/alertas/sos-rapido` – SOS rápido (só localização; pode ser anónimo)
 - `GET /api/v1/noticias/` – Listar notícias publicadas
+- `GET /api/v1/primeiros-socorros/` – Listar primeiros socorros ativos (vídeos, imagens, instruções)
+- `GET /api/v1/primeiros-socorros/{id}` – Detalhe de um item de primeiros socorros
 
 ### Cidadão logado (Bearer token com role cidadao)
 
@@ -84,6 +86,7 @@ Sos_Angola_backend/
 - `GET /api/v1/autoridades/` – CRUD autoridades
 - `GET /api/v1/autoridades/proximas?latitude=&longitude=&tipo=` – Autoridades mais próximas
 - `GET/POST/PATCH/DELETE /api/v1/noticias/admin/` – CRUD notícias
+- `GET/POST/PATCH/DELETE /api/v1/primeiros-socorros/admin/` – CRUD primeiros socorros (cadastro de vídeos, imagens e instruções para a tela do utilizador)
 - `POST /api/v1/chat/admin/conversas/{id}/mensagens` – Enviar mensagem no chat
 
 ### WebSocket

@@ -30,13 +30,19 @@ def enviar_mensagem(
     id_conversa: int,
     enviado_por: str,
     id_autor: int | None,
-    conteudo: str,
+    conteudo: str | None = "",
+    tipo_mensagem: str = "text",
+    media_url: str | None = None,
 ) -> ChatMensagem:
+    if not conteudo and not media_url:
+        conteudo = ""
     msg = ChatMensagem(
         id_conversa=id_conversa,
         enviado_por=enviado_por,
         id_autor=id_autor,
-        conteudo=conteudo,
+        conteudo=conteudo or None,
+        tipo_mensagem=tipo_mensagem or "text",
+        media_url=media_url,
     )
     db.add(msg)
     db.commit()

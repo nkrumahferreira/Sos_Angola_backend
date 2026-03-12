@@ -23,6 +23,7 @@ from app.controllers import (
     autoridades_router,
     cidadao_router,
     noticias_router,
+    primeiros_socorros_router,
     localizacao_router,
     chat_router,
     ws_router,
@@ -57,13 +58,16 @@ app.include_router(alertas_router, prefix="/api/v1")
 app.include_router(autoridades_router, prefix="/api/v1")
 app.include_router(cidadao_router, prefix="/api/v1")
 app.include_router(noticias_router, prefix="/api/v1")
+app.include_router(primeiros_socorros_router, prefix="/api/v1")
 app.include_router(localizacao_router, prefix="/api/v1")
 app.include_router(chat_router, prefix="/api/v1")
 app.include_router(ws_router, prefix="/api/v1")
 app.include_router(internal_router, prefix="/api/v1")
 
-# Ficheiros de upload (relatórios vídeo, etc.)
-app.mount("/api/v1/uploads", StaticFiles(directory=settings.UPLOAD_DIR), name="uploads")
+# Ficheiros de upload: só montar se o diretório existir (evita travar se criar falhar)
+_upload_dir = settings.get_upload_path()
+if _upload_dir.exists():
+    app.mount("/api/v1/uploads", StaticFiles(directory=str(_upload_dir)), name="uploads")
 
 
 @app.on_event("startup")
@@ -107,9 +111,16 @@ def root():
         "message": "SOS Angola API está a funcionar.",
         "docs": "http://127.0.0.1:8000/docs",
         "redoc": "http://127.0.0.1:8000/redoc",
+        "openapi_json": "http://127.0.0.1:8000/openapi.json",
     }
 
 
 @app.get("/health")
 def health():
     return {"status": "healthy"}
+
+
+@app.get("/ping")
+def ping():
+    """Resposta mínima para testar se o servidor responde (use 127.0.0.1:8000/ping)."""
+    return {"pong": True}
