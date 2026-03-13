@@ -55,6 +55,27 @@ class CidadaoPerfilResponse(BaseModel):
         from_attributes = True
 
 
+class CidadaoParaAutoridadeResponse(BaseModel):
+    """Dados do cidadão para o dashboard das autoridades (perfil + contatos + cuidados especiais)."""
+    id: int
+    nome: Optional[str] = None
+    data_nascimento: Optional[date] = None
+    telefone: Optional[str] = None
+    bi: Optional[str] = None
+    email: Optional[str] = None
+    fotografia_url: Optional[str] = None
+    fotografia_base64: Optional[str] = None  # foto de perfil em base64 (para exibir no dashboard)
+    genero: Optional[str] = None
+    precisa_cuidados_especiais: bool = False
+    ativo: Optional[bool] = None
+    created_at: Optional[datetime] = None
+    contatos_emergencia: List[ContatoEmergenciaResponse] = []
+    cuidados_especiais: Optional["CuidadosEspeciaisResponse"] = None
+
+    class Config:
+        from_attributes = True
+
+
 # --- Cuidados especiais ---
 class DoseSchema(BaseModel):
     valor: float
@@ -185,3 +206,7 @@ class CuidadosEspeciaisResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# Resolve forward reference em CidadaoParaAutoridadeResponse
+CidadaoParaAutoridadeResponse.model_rebuild()

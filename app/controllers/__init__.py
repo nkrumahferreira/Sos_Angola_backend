@@ -4,6 +4,8 @@ from app.controllers.autoridades_controller import router as autoridades_router
 from app.controllers.cidadao_controller import router as cidadao_router
 from app.controllers.noticias_controller import router as noticias_router
 from app.controllers.primeiros_socorros_controller import router as primeiros_socorros_router
+from app.controllers.quarteis_controller import router as quarteis_router
+from app.controllers.cadastro_autoridades_controller import router as cadastro_autoridades_router
 from app.controllers.localizacao_controller import router as localizacao_router
 from app.controllers.chat_controller import router as chat_router
 from app.controllers.ws_controller import ws_router
@@ -16,6 +18,8 @@ __all__ = [
     "cidadao_router",
     "noticias_router",
     "primeiros_socorros_router",
+    "quarteis_router",
+    "cadastro_autoridades_router",
     "localizacao_router",
     "chat_router",
     "ws_router",

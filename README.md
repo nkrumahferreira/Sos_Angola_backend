@@ -51,7 +51,9 @@ Sos_Angola_backend/
    - Execute: `python -m scripts.create_database`
    - O script cria a base `sos_angola` (ou o nome em `DB_NAME`) se não existir e cria todas as tabelas.
 
-4. **Iniciar a API:** `uvicorn main:app --reload`
+4. **Iniciar a API (com reload, sem observar .venv):**
+   - `uvicorn main:app --reload --host 0.0.0.0 --port 8000 --reload-exclude ".venv"`
+   - Ou, a partir da raiz do projeto: `.\scripts\run_reload.ps1`
 
 5. **Criar primeiro usuário autoridade (dashboard):**
    - `python -m scripts.criar_usuario_autoridade`
@@ -97,7 +99,7 @@ Sos_Angola_backend/
 ### Gravação e transmissão em direto da ocorrência
 
 - **Relatório vídeo:** Enquanto o cidadão tem uma ocorrência ativa, o app grava vídeo+áudio. Ao cancelar ou concluir, o ficheiro é enviado para o backend.
-- `POST /api/v1/alertas/{id}/relatorio-video` – Upload do vídeo-relatório (multipart: `file`, opcional `device_id` para anónimos). Guardado em `uploads/relatorios/{id}/` e registado em `midia_ocorrencia`.
+- `POST /api/v1/alertas/{id}/relatorio-video` – Upload do vídeo-relatório (multipart: `file`, opcional `device_id` para anónimos). Guardado em `uploads/relatorios/{id}/` e registado em `midia_ocorrencia`. **Conversão para H.264:** Se o servidor tiver **ffmpeg** instalado, o vídeo é convertido em background para H.264 (MP4) para reprodução em todos os browsers; caso contrário, o ficheiro original é mantido (podendo não reproduzir em Chrome/Edge se for HEVC).
 - **Ver em direto (autoridade):** Abrir no browser `GET /api/v1/live-viewer?alerta_id=1&token=JWT` (token de autoridade). A página conecta ao WebSocket de signaling e recebe o stream WebRTC do cidadão (quando o app publicar o stream; no mobile isso requer **development build** e `react-native-webrtc`).
 - Ficheiros de upload servidos em `/api/v1/uploads/` (ex.: `/api/v1/uploads/relatorios/1/xxx.mp4`).
 

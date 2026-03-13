@@ -43,6 +43,21 @@ class FrequenciaMonitorizacao(str, enum.Enum):
     SEMANAL = "semanal"
 
 
+class TipoQuartel(str, enum.Enum):
+    """Tipo de quartel: polícia, bombeiros ou saúde."""
+    POLICIA = "policia"
+    BOMBEIROS = "bombeiros"
+    SAUDE = "saude"
+
+
+class TipoCadastroAutoridade(str, enum.Enum):
+    """Tipo do cadastro de autoridade: admin, policial, bombeiro, medico."""
+    ADMIN = "admin"
+    POLICIAL = "policial"
+    BOMBEIRO = "bombeiro"
+    MEDICO = "medico"
+
+
 # --- Localização ---
 class Provincia(Base):
     __tablename__ = "provincia"
@@ -299,6 +314,36 @@ class Noticia(Base):
     publicada = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+
+# --- Quarteis (quartel da polícia, bombeiros, saúde: nome, tipo, latitude, longitude) ---
+class Quartel(Base):
+    __tablename__ = "quartel"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    nome = Column(String(200), nullable=False)
+    tipo = Column(String(50), nullable=False)  # TipoQuartel: policia, bombeiros, saude
+    latitude = Column(Float, nullable=False)
+    longitude = Column(Float, nullable=False)
+    ativo = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    cadastros_autoridade = relationship("CadastroAutoridade", back_populates="quartel")
+
+
+# --- Cadastro de Autoridades (pessoas vinculadas a um quartel: nome, tipo, quartel, telefone, email, senha) ---
+class CadastroAutoridade(Base):
+    __tablename__ = "cadastro_autoridade"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    nome = Column(String(200), nullable=False)
+    tipo = Column(String(50), nullable=False)  # TipoCadastroAutoridade: admin, policial, bombeiro, medico
+    id_quartel = Column(Integer, ForeignKey("quartel.id"), nullable=False)
+    telefone = Column(String(30), nullable=True)
+    email = Column(String(255), nullable=False, unique=True)
+    password_hash = Column(String(255), nullable=False)
+    ativo = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    quartel = relationship("Quartel", back_populates="cadastros_autoridade")
 
 
 # --- Primeiros Socorros (CRUD autoridades; app lista ativos com vídeos/imagens e instruções) ---

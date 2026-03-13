@@ -2,13 +2,17 @@
 SOS Angola Backend - FastAPI
 API para app mobile (cidadãos) e dashboard (autoridades).
 """
+import os
 import threading
 import time
 import urllib.request
-from fastapi import FastAPI, HTTPException
+from pathlib import Path
+
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, Response
 
 from app.config import settings
 from app.database import init_db
@@ -24,6 +28,8 @@ from app.controllers import (
     cidadao_router,
     noticias_router,
     primeiros_socorros_router,
+    quarteis_router,
+    cadastro_autoridades_router,
     localizacao_router,
     chat_router,
     ws_router,
@@ -59,13 +65,73 @@ app.include_router(autoridades_router, prefix="/api/v1")
 app.include_router(cidadao_router, prefix="/api/v1")
 app.include_router(noticias_router, prefix="/api/v1")
 app.include_router(primeiros_socorros_router, prefix="/api/v1")
+app.include_router(quarteis_router, prefix="/api/v1")
+app.include_router(cadastro_autoridades_router, prefix="/api/v1")
 app.include_router(localizacao_router, prefix="/api/v1")
 app.include_router(chat_router, prefix="/api/v1")
 app.include_router(ws_router, prefix="/api/v1")
 app.include_router(internal_router, prefix="/api/v1")
 
-# Ficheiros de upload: só montar se o diretório existir (evita travar se criar falhar)
+# Diretório de uploads (usado por stream-video e por StaticFiles)
 _upload_dir = settings.get_upload_path()
+
+
+@app.get("/api/v1/stream-video/{path:path}")
+def stream_video(request: Request, path: str):
+    """
+    Serve vídeos com Content-Type e Accept-Ranges corretos para o browser reproduzir.
+    Suporta pedidos Range (necessário para muitos players).
+    """
+    if not path or ".." in path or path.startswith("/"):
+        raise HTTPException(status_code=404, detail="Not found")
+    upload_dir = _upload_dir.resolve()
+    file_path = (upload_dir / path).resolve()
+    try:
+        if not file_path.is_file():
+            raise HTTPException(status_code=404, detail="Not found")
+        if os.path.commonpath([str(upload_dir), str(file_path)]) != str(upload_dir):
+            raise HTTPException(status_code=404, detail="Not found")
+    except ValueError:
+        raise HTTPException(status_code=404, detail="Not found")
+    size = file_path.stat().st_size
+    content_type = "video/mp4" if file_path.suffix.lower() == ".mp4" else "video/webm"
+    cors_headers = {
+        "Accept-Ranges": "bytes",
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Expose-Headers": "Content-Length, Content-Range, Accept-Ranges",
+    }
+    range_header = request.headers.get("range")
+    if range_header and range_header.startswith("bytes="):
+        try:
+            parts = range_header.replace("bytes=", "").split("-")
+            start = int(parts[0]) if parts[0] else 0
+            end = int(parts[1]) if len(parts) > 1 and parts[1] else size - 1
+            end = min(end, size - 1)
+            if start > end or start < 0:
+                raise ValueError("invalid range")
+            with open(file_path, "rb") as f:
+                f.seek(start)
+                data = f.read(end - start + 1)
+            return Response(
+                content=data,
+                status_code=206,
+                media_type=content_type,
+                headers={
+                    **cors_headers,
+                    "Content-Range": f"bytes {start}-{end}/{size}",
+                    "Content-Length": str(len(data)),
+                },
+            )
+        except (ValueError, OSError):
+            pass
+    return FileResponse(
+        file_path,
+        media_type=content_type,
+        headers=cors_headers,
+    )
+
+
+# Ficheiros de upload: só montar se o diretório existir (evita travar se criar falhar)
 if _upload_dir.exists():
     app.mount("/api/v1/uploads", StaticFiles(directory=str(_upload_dir)), name="uploads")
 

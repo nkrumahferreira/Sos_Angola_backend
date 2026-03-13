@@ -3,12 +3,15 @@ Alertas: SOS rápido (público/anónimo), SOS formulário e alerta familiar (log
 Dashboard: listar, atribuir autoridade, atualizar estado.
 Upload de relatório vídeo (gravação câmara+mic durante a ocorrência).
 """
+import logging
+import subprocess
 import uuid
 from pathlib import Path
-from fastapi import APIRouter, Depends, HTTPException, status, Query, File, UploadFile, Form
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status, Query, File, UploadFile, Form
 
 from app.config import settings
-from app.database import get_db
+from app.database import get_db, get_session_local
+from app.models.models import MidiaOcorrencia
 from app.schemas.alerta import (
     SOSRapidoRequest,
     SOSFormularioRequest,
@@ -20,6 +23,11 @@ from app.schemas.alerta import (
     AtualizarLocalizacaoAlertaRequest,
     TransformarFormularioRequest,
     MidiaOcorrenciaResponse,
+)
+from app.schemas.cidadao import (
+    CidadaoParaAutoridadeResponse,
+    ContatoEmergenciaResponse,
+    CuidadosEspeciaisResponse,
 )
 from app.dependencies.auth import get_current_user_id_optional, get_current_user_id, require_autoridade
 from app.services.alerta_service import (
@@ -39,7 +47,7 @@ from app.services.alerta_service import (
     criar_midia_relatorio,
     listar_midias_alerta,
 )
-from app.services.cidadao_service import listar_contatos_emergencia, obter_cidadao
+from app.services.cidadao_service import listar_contatos_emergencia, obter_cidadao, obter_cuidados_especiais
 from app.services.whatsapp_service import (
     enviar_whatsapp,
     formatar_mensagem_sos_contatos,
@@ -217,10 +225,27 @@ def transformar_em_formulario(
     return AlertaResponse.model_validate(alerta)
 
 
+async def _broadcast_localizacao_atualizada(
+    alerta_id: int,
+    ultima_latitude: float,
+    ultima_longitude: float,
+    ultima_localizacao_at: str | None,
+) -> None:
+    """Envia ao canal WebSocket 'alertas' para o dashboard atualizar o mapa em tempo real."""
+    await ws_manager.broadcast_alertas({
+        "evento": "localizacao_atualizada",
+        "alerta_id": alerta_id,
+        "ultima_latitude": ultima_latitude,
+        "ultima_longitude": ultima_longitude,
+        "ultima_localizacao_at": ultima_localizacao_at,
+    })
+
+
 @router.patch("/{alerta_id}/localizacao", response_model=AlertaResponse)
 def atualizar_localizacao(
     alerta_id: int,
     data: AtualizarLocalizacaoAlertaRequest,
+    background_tasks: BackgroundTasks,
     db=Depends(get_db),
     id_cidadao: int | None = Depends(get_current_user_id_optional),
 ):
@@ -238,16 +263,94 @@ def atualizar_localizacao(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Alerta não encontrado ou já não está ativo.",
         )
+    ultima_at = alerta.ultima_localizacao_at
+    background_tasks.add_task(
+        _broadcast_localizacao_atualizada,
+        alerta_id,
+        alerta.ultima_latitude,
+        alerta.ultima_longitude,
+        ultima_at.isoformat() if ultima_at else None,
+    )
     return AlertaResponse.model_validate(alerta)
 
 
 ALLOWED_VIDEO_EXTENSIONS = {"mp4", "webm", "mov", "mkv"}
 MAX_VIDEO_RELATORIO_MB = 500
+_log = logging.getLogger(__name__)
+
+
+def _transcode_video_to_h264(file_path_str: str, midia_id: int, alerta_id: int) -> None:
+    """
+    Converte o vídeo para H.264 (MP4) em background. Usa caminho absoluto para não depender do cwd.
+    Só remove o original depois de atualizar a BD; se ffmpeg falhar, o ficheiro original fica na pasta.
+    """
+    file_path = Path(file_path_str).resolve()
+    if not file_path.is_file():
+        _log.warning("Transcode: ficheiro não encontrado %s", file_path)
+        return
+    if file_path.suffix.lower() == ".mp4":
+        out_path = file_path.parent / (file_path.stem + "_h264.mp4")
+    else:
+        out_path = file_path.parent / (file_path.stem + ".mp4")
+    try:
+        proc = subprocess.run(
+            [
+                "ffmpeg",
+                "-y",
+                "-i",
+                str(file_path),
+                "-c:v",
+                "libx264",
+                "-preset",
+                "fast",
+                "-crf",
+                "23",
+                "-c:a",
+                "aac",
+                "-movflags",
+                "+faststart",
+                str(out_path),
+            ],
+            capture_output=True,
+            timeout=600,
+        )
+        if proc.returncode != 0:
+            _log.warning(
+                "Transcode ffmpeg falhou (midia_id=%s): %s",
+                midia_id,
+                (proc.stderr or b"").decode("utf-8", errors="replace")[-500:],
+            )
+            return
+        if not out_path.is_file():
+            return
+        new_url_path = f"relatorios/{alerta_id}/{out_path.name}"
+        SessionLocal = get_session_local()
+        db = SessionLocal()
+        try:
+            midia = db.query(MidiaOcorrencia).filter(MidiaOcorrencia.id == midia_id).first()
+            if midia:
+                midia.url_path = new_url_path
+                db.commit()
+                _log.info("Vídeo convertido para H.264: %s", new_url_path)
+        finally:
+            db.close()
+        file_path.unlink(missing_ok=True)
+    except FileNotFoundError:
+        _log.warning("ffmpeg não encontrado. Instale ffmpeg e reinicie o servidor (PATH). O vídeo original foi guardado.")
+    except subprocess.TimeoutExpired:
+        _log.warning("Transcode timeout (midia_id=%s). O vídeo original foi guardado.", midia_id)
+        if out_path.exists():
+            out_path.unlink(missing_ok=True)
+    except Exception as e:
+        _log.exception("Erro ao transcodificar vídeo (midia_id=%s): %s", midia_id, e)
+        if out_path.exists():
+            out_path.unlink(missing_ok=True)
 
 
 @router.post("/{alerta_id}/relatorio-video")
 async def upload_relatorio_video(
     alerta_id: int,
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(..., description="Vídeo da gravação (câmara+mic) da ocorrência"),
     device_id: str | None = Form(None, description="Obrigatório para anónimos"),
     camera: str | None = Query(None, description="Câmara: 'front' (frontal) ou 'back' (traseira). Opcional; sem valor = vídeo único."),
@@ -281,18 +384,20 @@ async def upload_relatorio_video(
     if (camera or "").strip().lower() in ("front", "back"):
         suffix = f"_{camera.strip().lower()}"
 
-    upload_path = settings.get_upload_path()
+    upload_path = settings.get_upload_path().resolve()
     relatorios_dir = upload_path / "relatorios" / str(alerta_id)
     relatorios_dir.mkdir(parents=True, exist_ok=True)
     filename = f"{uuid.uuid4().hex}{suffix}.{ext}"
-    file_path = relatorios_dir / filename
+    file_path = (relatorios_dir / filename).resolve()
     file_path.write_bytes(content)
     url_path = f"relatorios/{alerta_id}/{filename}"
 
     midia = criar_midia_relatorio(db, alerta_id, url_path)
     if not midia:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Erro ao registar mídia.")
-    return {"id": midia.id, "url_path": url_path, "message": "Relatório vídeo guardado."}
+
+    background_tasks.add_task(_transcode_video_to_h264, str(file_path), midia.id, alerta_id)
+    return {"id": midia.id, "url_path": url_path, "message": "Relatório vídeo guardado. A converter para H.264 em background."}
 
 
 @router.get("/{alerta_id}/pode-cancelar")
@@ -331,6 +436,41 @@ def listar_alertas_endpoint(
 ):
     alertas = listar_alertas(db, estado=estado, tipo=tipo, skip=skip, limit=limit)
     return [AlertaResponse.model_validate(a) for a in alertas]
+
+
+@router.get("/cidadao/{id_cidadao}", response_model=CidadaoParaAutoridadeResponse)
+def obter_cidadao_para_autoridade(
+    id_cidadao: int,
+    db=Depends(get_db),
+    _payload=Depends(require_autoridade),
+):
+    """Dashboard: obtém dados do cidadão por ID (perfil, contatos de emergência e cuidados especiais)."""
+    c = obter_cidadao(db, id_cidadao)
+    if not c:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cidadão não encontrado.")
+    contatos = listar_contatos_emergencia(db, id_cidadao)
+    # Sempre buscar cuidados especiais: se existir registo, o cidadão tem cuidados (independente da flag)
+    ce = obter_cuidados_especiais(db, id_cidadao)
+    # Base64 pode vir com prefixo data:image/...;base64, — enviar só o payload para o frontend montar o data URL
+    fotografia_b64 = getattr(c, "fotografia_base64", None) or None
+    if fotografia_b64 and isinstance(fotografia_b64, str) and fotografia_b64.startswith("data:"):
+        fotografia_b64 = fotografia_b64.split(",", 1)[-1] if "," in fotografia_b64 else None
+    return CidadaoParaAutoridadeResponse(
+        id=c.id,
+        nome=c.nome,
+        data_nascimento=c.data_nascimento,
+        telefone=c.telefone,
+        bi=c.bi,
+        email=c.email,
+        fotografia_url=c.fotografia_url,
+        fotografia_base64=fotografia_b64,
+        genero=c.genero,
+        precisa_cuidados_especiais=ce is not None or getattr(c, "precisa_cuidados_especiais", False),
+        ativo=getattr(c, "ativo", None),
+        created_at=c.created_at,
+        contatos_emergencia=[ContatoEmergenciaResponse.model_validate(x) for x in contatos],
+        cuidados_especiais=CuidadosEspeciaisResponse.model_validate(ce) if ce else None,
+    )
 
 
 @router.get("/{alerta_id}/midias", response_model=list[MidiaOcorrenciaResponse])
@@ -373,7 +513,7 @@ def atribuir_autoridade_endpoint(
 
 
 @router.patch("/{alerta_id}/estado", response_model=AlertaResponse)
-def atualizar_estado_endpoint(
+async def atualizar_estado_endpoint(
   alerta_id: int,
   body: AlertaEstadoUpdate,
   db=Depends(get_db),
@@ -386,4 +526,9 @@ def atualizar_estado_endpoint(
         situacao = "concluida" if body.estado == "resolvido" else "cancelada"
         motivo = body.motivo or getattr(alerta, "motivo_cancelamento", None)
         _notificar_contatos_ocorrencia_encerrada(db, alerta.id_cidadao, situacao, motivo)
+    if body.estado in ("cancelado", "resolvido"):
+        await ws_manager.broadcast_alertas({
+            "evento": "alerta_encerrado",
+            "alerta_id": alerta_id,
+        })
     return AlertaResponse.model_validate(alerta)

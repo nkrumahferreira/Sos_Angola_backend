@@ -30,6 +30,38 @@ def live_viewer_page():
     return FileResponse(path)
 
 
+@ws_router.websocket("/ws/mensagens")
+@ws_router.websocket("/ws/mensagens/")
+async def websocket_mensagens(websocket: WebSocket):
+    """
+    WebSocket de mensagens: aceita a conexão e mantém o cliente ligado.
+    Para mensagens por conversa use /api/v1/chat/conversas/{id_conversa}/ws?token=...
+    Este endpoint existe para evitar 403 quando clientes antigos ou alternativos ligam a /ws/mensagens/.
+    """
+    await websocket.accept()
+    token = websocket.query_params.get("token")
+    if token:
+        if token.startswith("Bearer "):
+            token = token[7:].strip()
+        payload = decode_access_token(token)
+        if not payload:
+            await websocket.close(code=4401)
+            return
+    try:
+        await ws_manager.register_only("mensagens", websocket)
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+    finally:
+        try:
+            await ws_manager.disconnect("mensagens", websocket)
+        except Exception:
+            pass
+
+
 @ws_router.websocket("/ws/alertas")
 async def websocket_alertas(websocket: WebSocket):
     """

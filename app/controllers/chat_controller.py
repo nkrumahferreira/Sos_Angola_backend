@@ -92,7 +92,9 @@ async def websocket_chat_conversa(websocket: WebSocket, id_conversa: int):
     WebSocket para receber mensagens em tempo real na conversa.
     Query: token=Bearer_xxx (cidadão ou autoridade com acesso à conversa).
     O servidor envia { "evento": "nova_mensagem", "mensagem": ChatMensagemResponse } quando há nova mensagem.
+    Aceita a conexão primeiro para evitar 403 no upgrade HTTP; depois valida e fecha com código se inválido.
     """
+    await websocket.accept()
     token = (websocket.query_params.get("token") or "").strip()
     if token.startswith("Bearer "):
         token = token[7:].strip()
@@ -127,7 +129,7 @@ async def websocket_chat_conversa(websocket: WebSocket, id_conversa: int):
             return
     finally:
         db.close()
-    await ws_manager.connect(_chat_room_key(id_conversa), websocket)
+    await ws_manager.register_only(_chat_room_key(id_conversa), websocket)
     try:
         while True:
             await websocket.receive_text()
@@ -145,8 +147,10 @@ async def websocket_chat_call(websocket: WebSocket, id_conversa: int):
     Signaling WebRTC para chamadas de voz/vídeo na conversa.
     Query: token=xxx&role=cidadao|autoridade.
     Mensagens JSON: type=call_request|call_accept|call_reject|offer|answer|ice|hangup, payload=...
+    Aceita a conexão primeiro para evitar 403 no upgrade HTTP.
     """
     import json
+    await websocket.accept()
     token = (websocket.query_params.get("token") or "").strip()
     if token.startswith("Bearer "):
         token = token[7:].strip()
